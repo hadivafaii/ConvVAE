@@ -16,7 +16,6 @@ from torchvision import datasets, transforms
 from torchvision.utils import save_image
 from tensorboardX import SummaryWriter
 
-from .dataset import create_datasets, normalize_fn
 from .optimizer import Lamb, log_lamb_rs, ScheduledOptim
 from .model_utils import save_model
 
