@@ -48,10 +48,10 @@ class VAE(nn.Module):
 
     def compute_loss(self, mu, logvar, x_recon, x_true):
         recon_term = self.recon_loss_fn(x_recon, x_true)
-        kl_term = -0.5 * torch.sum(1 + logvar - mu ** 2 - logvar.exp())
+        kl_term = self.beta * -0.5 * torch.sum(1 + logvar - mu ** 2 - logvar.exp())
 
         loss_dict = {
-            "kl": self.beta * kl_term,
+            "kl": kl_term,
             "recon": recon_term,
             "tot": recon_term + kl_term,
         }
