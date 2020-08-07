@@ -8,7 +8,8 @@ from typing import List, Tuple, Union, Dict
 class Config:
     def __init__(
         self,
-            beta: float = 1.0,
+            beta_range: Tuple[float, float] = (0.0, 1.0),
+            beta_warmup_steps: int = 5000,
             nb_levels: int = 3,
             hidden_size: int = 2,
             encoder_kernel_sizes: List[int] = None,
@@ -25,7 +26,8 @@ class Config:
     ):
         super(Config).__init__()
 
-        self.beta = beta
+        self.beta_range = beta_range
+        self.beta_warmup_steps = beta_warmup_steps
         self.nb_levels = nb_levels
         self.hidden_size = hidden_size
 
@@ -77,8 +79,8 @@ class Config:
 class TrainConfig:
     def __init__(
             self,
-            optim_choice='adam',
-            lr=1e-3,
+            optim_choice='adamax',
+            lr=1e-2,
             betas=(0.9, 0.999),
             weight_decay: float = 0.0,
             warmup_steps: int = 1000,
@@ -90,7 +92,7 @@ class TrainConfig:
     ):
         super(TrainConfig).__init__()
 
-        _allowed_optim_choices = ['lamb', 'adam', 'adam_with_warmup']
+        _allowed_optim_choices = ['lamb', 'adam', 'adam_with_warmup', 'adamax']
         assert optim_choice in _allowed_optim_choices, "Invalid optimzer choice, allowed options:\n{}".format(_allowed_optim_choices)
 
         self.optim_choice = optim_choice

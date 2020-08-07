@@ -9,7 +9,8 @@ from copy import deepcopy as dc
 
 import torch
 from torch import nn
-from torch.optim import Adam
+from torch.optim import Adam, Adamax
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 from torchvision import datasets, transforms
@@ -107,7 +108,20 @@ class VAETrainer:
                 print("i = {}. nan encountered in inputs. moving on".format(i))
                 continue
 
+            # get predictions
             z, mu, logvar, src_recon = self.model(batch_src)
+            # update beta
+            global_step = epoch * max_num_batches + i
+            if global_step > self.config.beta_warmup_steps:
+                current_beta = self.config.beta_range[1]
+            else:
+                current_beta = \
+                    self.config.beta_range[0] + \
+                    (self.config.beta_range[1] - self.config.beta_range[0]) * \
+                    global_step / self.config.beta_warmup_steps
+            self.model.update_beta(current_beta)
+            self.writer.add_scalar("beta", self.model.beta, global_step)
+            # compute loss
             loss_dict = self.model.compute_loss(mu, logvar, src_recon, batch_src)
 
             if torch.isnan(loss_dict['tot']).sum().item():
@@ -116,18 +130,6 @@ class VAETrainer:
 
             for k, v in loss_dict.items():
                 cuml_loss_dict[k] += v.item()
-
-            global_step = epoch * max_num_batches + i
-            if (global_step + 1) % self.train_config.log_freq == 0:
-                # add losses to writerreinfor
-                for k, v in loss_dict.items():
-                    self.writer.add_scalar("loss/{}".format(k), v.item() / len(batch_src), global_step)
-
-                # add optim state to writer
-                if self.train_config.optim_choice == 'adam_with_warmup':
-                    self.writer.add_scalar('lr', self.optim_schedule.current_lr, global_step)
-                else:
-                    log_lamb_rs(self.optim, self.writer, global_step)
 
             msg0 = 'epoch {:d}'.format(epoch)
             msg1 = ""
@@ -149,6 +151,19 @@ class VAETrainer:
                 final_loss.backward()
                 self.optim.step()
 
+            if (global_step + 1) % self.train_config.log_freq == 0:
+                # add losses to writerreinfor
+                for k, v in loss_dict.items():
+                    self.writer.add_scalar("loss/{}".format(k), v.item() / len(batch_src), global_step)
+
+                # add optim state to writer
+                if self.train_config.optim_choice == 'adam_with_warmup':
+                    self.writer.add_scalar('lr', self.optim_schedule.current_lr, global_step)
+                elif self.train_config.optim_choice == 'adamax':
+                    self.writer.add_scalar('lr', self.optim_schedule.get_last_lr()[0], global_step)
+                elif self.train_config.optim_choice == 'lamb':
+                    log_lamb_rs(self.optim, self.writer, global_step)
+
             if i + 1 == max_num_batches:
                 msg0 = 'epoch {:d}, '.format(epoch)
                 msg1 = ""
@@ -156,6 +171,9 @@ class VAETrainer:
                     msg1 += "avg {}: {:.3e}, ".format(k, v / max_num_batches / self.train_config.batch_size)
                 desc2 = msg0 + msg1
                 pbar.set_description(desc2)
+
+        if self.train_config.optim_choice == 'adamax':
+            self.optim_schedule.step()
 
     def eval_and_save_figs(self, epoch, comment):
         self.model.eval()
@@ -247,6 +265,15 @@ class VAETrainer:
                 betas=self.train_config.betas,
                 weight_decay=self.train_config.weight_decay,
             )
+
+        elif self.train_config.optim_choice == 'adamax':
+            self.optim = Adamax(
+                filter(lambda p: p.requires_grad, self.model.parameters()),
+                lr=self.train_config.lr,
+                betas=self.train_config.betas,
+                weight_decay=self.train_config.weight_decay,
+            )
+            self.optim_schedule = CosineAnnealingLR(self.optim, T_max=30, eta_min=1e-5)
 
         elif self.train_config.optim_choice == 'adam_with_warmup':
             self.optim = Adam(

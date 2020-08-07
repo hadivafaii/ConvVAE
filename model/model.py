@@ -11,7 +11,6 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.nn.utils import weight_norm
-from torch.optim import Adam
 
 from .model_utils import print_num_params
 
@@ -21,6 +20,7 @@ class VAE(nn.Module):
         super(VAE, self).__init__()
 
         self.config = config
+        self.beta = 0.0
 
         self.encoder = ConvEncoder(config, verbose=verbose)
         self.decoder = ConvDecoder(config, verbose=verbose)
@@ -51,11 +51,15 @@ class VAE(nn.Module):
         kl_term = -0.5 * torch.sum(1 + logvar - mu ** 2 - logvar.exp())
 
         loss_dict = {
-            "kl": kl_term,
+            "kl": self.beta * kl_term,
             "recon": recon_term,
-            "tot": recon_term + self.config.beta * kl_term,
+            "tot": recon_term + kl_term,
         }
         return loss_dict
+
+    def update_beta(self, new_beta):
+        assert new_beta >= 0.0, "beta must be non-negative"
+        self.beta = new_beta
 
     def init_weights(self):
         self.apply(self._init_weights)
